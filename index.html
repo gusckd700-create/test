@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR코드 생성기</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QRious Library for QR Code Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        /* 커스텀 색상 선택기 스타일링 */
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 0.375rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans text-slate-800">
+
+    <!-- 토스트 알림창 (에러 메시지 표시용) -->
+    <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg font-medium transition-all duration-300 opacity-0 -translate-y-full pointer-events-none z-50">
+        메시지
+    </div>
+
+    <div class="bg-white p-6 sm:p-10 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
+        
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-blue-100 text-blue-600 rounded-full mb-4">
+                <i class="ph ph-qr-code text-3xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold mb-2">QR코드 생성기</h1>
+            <p class="text-slate-500 text-sm">텍스트나 링크를 입력하여 QR코드를 만드세요.</p>
+        </div>
+
+        <div class="space-y-5">
+            <!-- 입력 필드 -->
+            <div>
+                <label for="qrText" class="block text-sm font-semibold text-slate-700 mb-1.5">내용 (URL 또는 텍스트)</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                        <i class="ph ph-link text-lg"></i>
+                    </div>
+                    <input type="text" id="qrText" 
+                        class="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                        placeholder="https://example.com"
+                        autocomplete="off">
+                </div>
+            </div>
+
+            <!-- 색상 선택 -->
+            <div>
+                <label for="qrColor" class="block text-sm font-semibold text-slate-700 mb-1.5">QR코드 색상</label>
+                <div class="flex items-center gap-3">
+                    <input type="color" id="qrColor" value="#0F172A" class="w-12 h-10 rounded-lg cursor-pointer bg-slate-50 border border-slate-200">
+                    <span class="text-sm text-slate-500" id="colorHex">#0F172A</span>
+                </div>
+            </div>
+
+            <!-- 생성 버튼 -->
+            <button id="generateBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-sm shadow-blue-200">
+                <i class="ph ph-magic-wand text-lg"></i>
+                QR코드 생성하기
+            </button>
+        </div>
+
+        <!-- 결과 표시 영역 (초기에는 숨김) -->
+        <div id="resultContainer" class="mt-8 pt-8 border-t border-slate-100 hidden flex-col items-center animate-fade-in">
+            <div class="p-3 bg-white rounded-xl shadow-sm border border-slate-100 mb-5">
+                <!-- QR코드가 그려질 캔버스 -->
+                <canvas id="qrCanvas" class="w-48 h-48 sm:w-56 sm:h-56"></canvas>
+            </div>
+            
+            <button id="downloadBtn" class="bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-6 rounded-full transition-colors flex items-center justify-center gap-2 text-sm shadow-sm">
+                <i class="ph ph-download-simple text-lg"></i>
+                이미지 다운로드
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const qrText = document.getElementById('qrText');
+            const qrColor = document.getElementById('qrColor');
+            const colorHex = document.getElementById('colorHex');
+            const generateBtn = document.getElementById('generateBtn');
+            const resultContainer = document.getElementById('resultContainer');
+            const qrCanvas = document.getElementById('qrCanvas');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const toast = document.getElementById('toast');
+
+            let qr; // QRious 인스턴스
+
+            // 커스텀 토스트 알림 함수
+            function showToast(message) {
+                toast.textContent = message;
+                toast.classList.remove('opacity-0', '-translate-y-full');
+                toast.classList.add('opacity-100', 'translate-y-0');
+                
+                setTimeout(() => {
+                    toast.classList.remove('opacity-100', 'translate-y-0');
+                    toast.classList.add('opacity-0', '-translate-y-full');
+                }, 3000);
+            }
+
+            // 색상 값 변경 시 텍스트 업데이트
+            qrColor.addEventListener('input', (e) => {
+                colorHex.textContent = e.target.value.toUpperCase();
+            });
+
+            // QR코드 생성 함수
+            function generateQRCode() {
+                const text = qrText.value.trim();
+                const color = qrColor.value;
+
+                if (!text) {
+                    showToast('QR코드로 만들 URL이나 텍스트를 입력해주세요.');
+                    qrText.focus();
+                    return;
+                }
+
+                // 캔버스 크기는 기기 픽셀 비율에 맞춰 선명하게 설정
+                const size = 300; 
+
+                if (!qr) {
+                    // 처음 생성할 때 인스턴스 초기화
+                    qr = new QRious({
+                        element: qrCanvas,
+                        size: size,
+                        value: text,
+                        foreground: color,
+                        background: 'white',
+                        level: 'H' // Error correction level (High)
+                    });
+                } else {
+                    // 이미 인스턴스가 있으면 값만 업데이트
+                    qr.set({
+                        value: text,
+                        foreground: color,
+                        size: size
+                    });
+                }
+
+                // 결과 영역 부드럽게 나타나게 하기
+                resultContainer.classList.remove('hidden');
+                resultContainer.classList.add('flex');
+            }
+
+            // 생성 버튼 클릭 이벤트
+            generateBtn.addEventListener('click', generateQRCode);
+
+            // 엔터 키 입력 시 생성
+            qrText.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    generateQRCode();
+                }
+            });
+
+            // 다운로드 버튼 클릭 이벤트
+            downloadBtn.addEventListener('click', () => {
+                // 캔버스 이미지를 Data URL로 변환 (PNG 포맷)
+                const imageURL = qrCanvas.toDataURL('image/png');
+                
+                // 가상의 a 태그를 생성하여 다운로드 트리거
+                const link = document.createElement('a');
+                link.href = imageURL;
+                link.download = 'my_qrcode.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        });
+    </script>
+</body>
+</html>
